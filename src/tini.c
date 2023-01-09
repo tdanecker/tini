@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/prctl.h>
+#include <sys/reboot.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -90,11 +91,11 @@ static int32_t expect_status[(STATUS_MAX - STATUS_MIN + 1) / 32];
 
 #ifdef PR_SET_CHILD_SUBREAPER
 #define HAS_SUBREAPER 1
-#define OPT_STRING "p:hvwgle:s"
+#define OPT_STRING "p:hvwgle:rs"
 #define SUBREAPER_ENV_VAR "TINI_SUBREAPER"
 #else
 #define HAS_SUBREAPER 0
-#define OPT_STRING "p:hvwgle:"
+#define OPT_STRING "p:hvwgle:r"
 #endif
 
 #define VERBOSITY_ENV_VAR "TINI_VERBOSITY"
@@ -127,6 +128,8 @@ To fix the problem, "
 "set the environment variable " SUBREAPER_ENV_VAR " to register Tini as a child subreaper, or "
 #endif
 "run Tini as PID 1.";
+
+static bool reboot_after_exit = false;
 
 int restore_signals(const signal_configuration_t* const sigconf_ptr) {
 	if (sigprocmask(SIG_SETMASK, sigconf_ptr->sigmask_ptr, NULL)) {
@@ -248,6 +251,7 @@ void print_usage(char* const name, FILE* const file) {
 	fprintf(file, "  -w: Print a warning when processes are getting reaped.\n");
 	fprintf(file, "  -g: Send signals to the child's process group.\n");
 	fprintf(file, "  -e EXIT_CODE: Remap EXIT_CODE (from 0 to 255) to 0 (can be repeated).\n");
+	fprintf(file, "  -r: Reboot after the program exits.\n");
 	fprintf(file, "  -l: Show license and exit.\n");
 #endif
 
@@ -354,6 +358,10 @@ int parse_args(const int argc, char* const argv[], char* (**child_args_ptr_ptr)[
 					*parse_fail_exitcode_ptr = 1;
 					return 1;
 				}
+				break;
+
+			case 'r':
+				reboot_after_exit = true;
 				break;
 
 			case 'l':
@@ -675,6 +683,10 @@ int main(int argc, char *argv[]) {
 
 		if (child_exitcode != -1) {
 			PRINT_TRACE("Exiting: child has exited");
+			if (reboot_after_exit) {
+				sync();
+				reboot(RB_AUTOBOOT);
+			}
 			return child_exitcode;
 		}
 	}
